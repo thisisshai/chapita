@@ -7,7 +7,7 @@ const { v4: uuidv4 } = require('uuid');
 // Generate a QR code for the business counter
 router.get('/qr/:businessId', async (req, res) => {
   const { businessId } = req.params;
-  const enrollUrl = `http://localhost:3000/stamps/enrol/${businessId}`;
+  const enrollUrl = `http://172.20.10.2:3000/stamps/enrol/${businessId}`;
   
   try {
     const qrDataUrl = await QRCode.toDataURL(enrollUrl);
@@ -213,6 +213,19 @@ router.get('/card/:customerId', async (req, res) => {
     </body>
     </html>
   `);
+});
+// Get business ID by email — used by the dashboard
+router.get('/business-by-email/:email', async (req, res) => {
+  const { email } = req.params;
+
+  const { data, error } = await supabase
+    .from('businesses')
+    .select('id')
+    .eq('email', email)
+    .single();
+
+  if (error || !data) return res.json({ businessId: null });
+  res.json({ businessId: data.id });
 });
 
 module.exports = router;

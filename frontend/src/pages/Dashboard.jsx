@@ -4,17 +4,35 @@ import { useNavigate } from 'react-router-dom';
 
 export default function Dashboard() {
   const [user, setUser] = useState(null);
+  const [qrCode, setQrCode] = useState(null);
+  const [businessId, setBusinessId] = useState(null);
   const navigate = useNavigate();
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!session) {
         navigate('/login');
       } else {
         setUser(session.user);
+        await fetchBusinessData(session.user.email);
       }
     });
   }, []);
+
+  async function fetchBusinessData(email) {
+    try {
+      const res = await fetch(`http://localhost:3000/stamps/business-by-email/${encodeURIComponent(email)}`);
+      const data = await res.json();
+      if (data.businessId) {
+        setBusinessId(data.businessId);
+        const qrRes = await fetch(`http://localhost:3000/stamps/qr/${data.businessId}`);
+        const qrData = await qrRes.json();
+        setQrCode(qrData.qr);
+      }
+    } catch (err) {
+      console.log('Could not load business data:', err);
+    }
+  }
 
   async function handleLogout() {
     await supabase.auth.signOut();
@@ -22,7 +40,6 @@ export default function Dashboard() {
   }
 
   if (!user) return null;
-
   const meta = user.user_metadata;
 
   return (
@@ -52,6 +69,14 @@ export default function Dashboard() {
             <p style={styles.statLabel}>Rewards redeemed</p>
           </div>
         </div>
+        {qrCode && (
+          <div style={styles.qrCard}>
+            <h2 style={styles.qrTitle}>Your counter QR code</h2>
+            <p style={styles.qrSubtitle}>Display this at your counter — customers scan it to get their stamp card</p>
+            <img src={qrCode} alt="Counter QR code" style={styles.qrImage} />
+            <p style={styles.qrHint}>Scan with your phone to test</p>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -67,8 +92,13 @@ const styles = {
   businessName: { fontSize: '20px', fontWeight: '600', color: '#1a1a1a' },
   reward: { color: '#555', margin: '8px 0 4px', fontSize: '14px' },
   email: { color: '#999', fontSize: '13px', margin: 0 },
-  statsRow: { display: 'flex', gap: '16px' },
+  statsRow: { display: 'flex', gap: '16px', marginBottom: '24px' },
   stat: { flex: 1, backgroundColor: 'white', padding: '24px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' },
   statNumber: { fontSize: '36px', fontWeight: '700', color: '#2E75B6', margin: '0 0 4px' },
   statLabel: { color: '#777', fontSize: '14px', margin: 0 },
+  qrCard: { backgroundColor: 'white', padding: '32px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' },
+  qrTitle: { fontSize: '18px', fontWeight: '600', color: '#1a1a1a', marginBottom: '8px' },
+  qrSubtitle: { color: '#777', fontSize: '14px', marginBottom: '24px' },
+  qrImage: { width: '200px', height: '200px', display: 'block', margin: '0 auto 16px' },
+  qrHint: { color: '#bbb', fontSize: '13px' },
 };
