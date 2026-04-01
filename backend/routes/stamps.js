@@ -155,6 +155,7 @@ router.get('/card/:customerId', async (req, res) => {
 
   const stampCount = stamps ? stamps.length : 0;
   const hasReward = stampCount >= 10;
+  const cardQr = await QRCode.toDataURL(`http://localhost:3000/stamps/card/${customerId}`);
 
   res.send(`
     <!DOCTYPE html>
@@ -181,6 +182,8 @@ router.get('/card/:customerId', async (req, res) => {
         .reward-badge { background: ${business.brand_colour || '#2E75B6'}; color: white; border-radius: 12px; padding: 16px; text-align: center; margin-bottom: 20px; }
         .reward-badge h3 { font-size: 18px; margin-bottom: 4px; }
         .reward-badge p { font-size: 13px; opacity: 0.85; }
+        .qr-section { text-align: center; margin-bottom: 20px; }
+        .qr-label { font-size: 13px; color: #999; margin-bottom: 10px; }
         .wallet-btn { display: block; width: 100%; padding: 14px; background: black; color: white; border: none; border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer; text-align: center; text-decoration: none; margin-bottom: 8px; }
         .powered { text-align: center; margin-top: 20px; font-size: 12px; color: #bbb; }
       </style>
@@ -196,7 +199,7 @@ router.get('/card/:customerId', async (req, res) => {
         <div class="reward">${business.reward_name}</div>
         <div class="stamps-label">Stamps collected</div>
         <div class="stamps-grid">
-          ${Array.from({length: 10}, (_, i) => 
+          ${Array.from({length: 10}, (_, i) =>
             `<div class="stamp ${i < stampCount ? 'filled' : ''}"></div>`
           ).join('')}
         </div>
@@ -207,13 +210,54 @@ router.get('/card/:customerId', async (req, res) => {
             <p>Show this to staff to claim your ${business.reward_name}</p>
           </div>
         ` : ''}
-        <a class="wallet-btn" href="#">Add to Apple Wallet</a>
+        <div class="qr-section">
+          <p class="qr-label">Staff scan this to add a stamp</p>
+          <img src="${cardQr}" style="width:140px;height:140px;" />
+        </div>
+       <div style="text-align:center; margin-bottom:8px;">
+  <a href="#" style="display:inline-flex; align-items:center; gap:10px; background:black; color:white; padding:10px 20px; border-radius:10px; text-decoration:none; font-family:-apple-system,sans-serif; font-size:15px; font-weight:500;">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+      <rect x="2" y="4" width="20" height="16" rx="3" fill="#1a1a1a" stroke="white" stroke-width="1"/>
+      <rect x="2" y="8" width="20" height="4" fill="#3a7bd5"/>
+      <rect x="2" y="8" width="20" height="2" fill="#e8b84b"/>
+      <rect x="2" y="10" width="20" height="2" fill="#4caf50"/>
+      <rect x="2" y="12" width="20" height="2" fill="#e57373"/>
+    </svg>
+    <span style="display:flex; flex-direction:column; line-height:1.2; text-align:left;">
+      <span style="font-size:11px; opacity:0.8;">Add to</span>
+      <span style="font-size:17px; font-weight:600;">Apple Wallet</span>
+    </span>
+  </a>
+</div>
         <div class="powered">Powered by Chapita</div>
       </div>
     </body>
     </html>
   `);
+}); 
+
+// Issue a stamp to a customer
+router.post('/issue', async (req, res) => {
+  const { customerId, businessId } = req.body;
+
+  if (!customerId || !businessId) {
+    return res.status(400).json({ error: 'customerId and businessId are required' });
+  }
+
+  const { data, error } = await supabase
+    .from('stamps')
+    .insert({ customer_id: customerId, business_id: businessId })
+    .select()
+    .single();
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  res.status(201).json({ 
+    message: 'Stamp issued successfully',
+    stamp: data
+  });
 });
+
 // Get business ID by email — used by the dashboard
 router.get('/business-by-email/:email', async (req, res) => {
   const { email } = req.params;
