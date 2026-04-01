@@ -10,6 +10,8 @@ app.use(express.json());
 
 const authRoutes = require('./routes/auth');
 app.use('/auth', authRoutes);
+const stampRoutes = require('./routes/stamps');
+app.use('/stamps', stampRoutes);
 
 app.get('/', (req, res) => {
   res.json({ 
