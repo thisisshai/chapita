@@ -272,4 +272,68 @@ router.get('/business-by-email/:email', async (req, res) => {
   res.json({ businessId: data.id });
 });
 
+// Generate QR code for a specific customer (staff scans this to issue a stamp)
+router.get('/customer-qr/:customerId', async (req, res) => {
+  const { customerId } = req.params;
+  try {
+    const baseUrl = process.env.BASE_URL || `http://localhost:3000`;
+const stampUrl = `${baseUrl}/stamps/issue-scan/${customerId}`;
+const qrDataUrl = await QRCode.toDataURL(stampUrl);
+    const base64Data = qrDataUrl.replace(/^data:image\/png;base64,/, '');
+    const imgBuffer = Buffer.from(base64Data, 'base64');
+    res.setHeader('Content-Type', 'image/png');
+    res.send(imgBuffer);
+  } catch (err) {
+    console.error('Customer QR error:', err);
+    res.status(500).json({ error: 'Failed to generate QR' });
+  }
+});
+// Staff scans customer QR → stamp issued automatically
+router.get('/issue-scan/:customerId', async (req, res) => {
+  const { customerId } = req.params;
+
+  try {
+    // Find which business this customer belongs to
+    const { data: customer, error: customerError } = await supabase
+      .from('customers')
+      .select('business_id, phone_or_email')
+      .eq('id', customerId)
+      .single();
+
+    if (customerError || !customer) {
+      return res.send(`<html><body style="font-family:sans-serif;text-align:center;padding:40px">
+        <h2>❌ Customer not found</h2></body></html>`);
+    }
+
+    // Insert the stamp
+    const { error: stampError } = await supabase
+      .from('stamps')
+      .insert({ customer_id: customerId, business_id: customer.business_id });
+
+    if (stampError) {
+      return res.send(`<html><body style="font-family:sans-serif;text-align:center;padding:40px">
+        <h2>❌ Could not issue stamp</h2><p>${stampError.message}</p></body></html>`);
+    }
+
+    // Count total stamps for this customer
+    const { count } = await supabase
+      .from('stamps')
+      .select('*', { count: 'exact', head: true })
+      .eq('customer_id', customerId);
+
+    res.send(`<html><body style="font-family:sans-serif;text-align:center;padding:40px;background:#f5f5f5">
+      <div style="background:white;border-radius:16px;padding:32px;max-width:320px;margin:0 auto;box-shadow:0 2px 12px rgba(0,0,0,0.1)">
+        <div style="font-size:48px">✅</div>
+        <h2 style="margin:16px 0 8px">Stamp added!</h2>
+        <p style="color:#666">${customer.phone_or_email}</p>
+        <p style="font-size:24px;font-weight:bold;color:#2E75B6">${count} / 10 stamps</p>
+      </div>
+    </body></html>`);
+
+  } catch (err) {
+    console.error('Issue scan error:', err);
+    res.status(500).send(`<html><body style="font-family:sans-serif;text-align:center;padding:40px">
+      <h2>❌ Server error</h2></body></html>`);
+  }
+});
 module.exports = router;
