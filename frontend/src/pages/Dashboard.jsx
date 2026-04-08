@@ -6,6 +6,7 @@ export default function Dashboard() {
   const [user, setUser] = useState(null);
   const [qrCode, setQrCode] = useState(null);
   const [businessId, setBusinessId] = useState(null);
+  const [stats, setStats] = useState({ customers: 0, stamps: 0, redemptions: 0 });
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -28,6 +29,26 @@ export default function Dashboard() {
         const qrRes = await fetch(`http://localhost:3000/stamps/qr/${data.businessId}`);
         const qrData = await qrRes.json();
         setQrCode(qrData.qr);
+        const { count: customerCount } = await supabase
+  .from('customers')
+  .select('*', { count: 'exact', head: true })
+  .eq('business_id', data.businessId);
+
+const { count: stampCount } = await supabase
+  .from('stamps')
+  .select('*', { count: 'exact', head: true })
+  .eq('business_id', data.businessId);
+
+const { count: redemptionCount } = await supabase
+  .from('redemptions')
+  .select('*', { count: 'exact', head: true })
+  .eq('business_id', data.businessId);
+
+setStats({
+  customers: customerCount || 0,
+  stamps: stampCount || 0,
+  redemptions: redemptionCount || 0
+});
       }
     } catch (err) {
       console.log('Could not load business data:', err);
@@ -57,15 +78,15 @@ export default function Dashboard() {
         </div>
         <div style={styles.statsRow}>
           <div style={styles.stat}>
-            <p style={styles.statNumber}>0</p>
+            <p style={styles.statNumber}>{stats.customers}</p>
             <p style={styles.statLabel}>Customers</p>
           </div>
           <div style={styles.stat}>
-            <p style={styles.statNumber}>0</p>
+            <p style={styles.statNumber}>{stats.stamps}</p>
             <p style={styles.statLabel}>Stamps issued</p>
           </div>
           <div style={styles.stat}>
-            <p style={styles.statNumber}>0</p>
+            <p style={styles.statNumber}>{stats.redemptions}</p>
             <p style={styles.statLabel}>Rewards redeemed</p>
           </div>
         </div>
