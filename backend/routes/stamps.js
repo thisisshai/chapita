@@ -277,7 +277,7 @@ router.get('/customer-qr/:customerId', async (req, res) => {
   const { customerId } = req.params;
   try {
     const baseUrl = process.env.BASE_URL || `http://localhost:3000`;
-const stampUrl = `${baseUrl}/stamps/issue-scan/${customerId}`;
+const stampUrl = `${baseUrl}/stamps/action/${customerId}`;
 const qrDataUrl = await QRCode.toDataURL(stampUrl);
     const base64Data = qrDataUrl.replace(/^data:image\/png;base64,/, '');
     const imgBuffer = Buffer.from(base64Data, 'base64');
@@ -334,6 +334,145 @@ router.get('/issue-scan/:customerId', async (req, res) => {
     console.error('Issue scan error:', err);
     res.status(500).send(`<html><body style="font-family:sans-serif;text-align:center;padding:40px">
       <h2>❌ Server error</h2></body></html>`);
+  }
+});
+// Redeem a reward — staff scan customer QR code
+router.get('/redeem-scan/:customerId', async (req, res) => {
+  const { customerId } = req.params;
+
+  try {
+    // 1. Look up the customer
+    const { data: customer, error: customerError } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('id', customerId)
+      .single();
+
+    if (customerError || !customer) {
+      return res.status(404).send('<h2>Customer not found</h2>');
+    }
+
+    // 2. Count their total stamps
+    const { count: stampCount } = await supabase
+      .from('stamps')
+      .select('*', { count: 'exact', head: true })
+      .eq('customer_id', customerId);
+
+    // 3. Count their past redemptions
+    const { count: redemptionCount } = await supabase
+      .from('redemptions')
+      .select('*', { count: 'exact', head: true })
+      .eq('customer_id', customerId);
+
+    // 4. Work out if they have an unredeemed reward
+    const rewardsEarned = Math.floor(stampCount / 10);
+    const hasUnredeemedReward = rewardsEarned > redemptionCount;
+
+    if (!hasUnredeemedReward) {
+      return res.send(`
+        <html><body style="font-family:sans-serif;text-align:center;padding:40px">
+          <h2>No reward to redeem</h2>
+          <p>This customer has ${stampCount} stamp${stampCount === 1 ? '' : 's'} and no unredeemed rewards.</p>
+        </body></html>
+      `);
+    }
+
+    // 5. Insert a row into the redemptions table
+    const { error: redemptionError } = await supabase
+      .from('redemptions')
+      .insert([{
+        customer_id: customerId,
+        business_id: customer.business_id
+      }]);
+
+    if (redemptionError) {
+      console.error('Redemption insert error:', redemptionError);
+      return res.status(500).send('<h2>Error recording redemption</h2>');
+    }
+
+    // 6. Show confirmation
+    res.send(`
+      <html><body style="font-family:sans-serif;text-align:center;padding:40px">
+        <h1>✅ Reward redeemed!</h1>
+        <p>Redemption recorded for <strong>${customer.phone_or_email}</strong>.</p>
+        <p>They have ${stampCount} stamp${stampCount === 1 ? '' : 's'} and ${redemptionCount + 1} redemption${redemptionCount + 1 === 1 ? '' : 's'} total.</p>
+      </body></html>
+    `);
+
+  } catch (err) {
+    console.error('Redeem scan error:', err);
+    res.status(500).send('<h2>Something went wrong</h2>');
+  }
+});
+
+// Staff action page — scan customer QR to choose stamp or redeem
+router.get('/action/:customerId', async (req, res) => {
+  const { customerId } = req.params;
+
+  try {
+    // 1. Look up the customer
+    const { data: customer, error: customerError } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('id', customerId)
+      .single();
+
+    if (customerError || !customer) {
+      return res.status(404).send('<h2>Customer not found</h2>');
+    }
+
+    // 2. Count their total stamps
+    const { count: stampCount } = await supabase
+      .from('stamps')
+      .select('*', { count: 'exact', head: true })
+      .eq('customer_id', customerId);
+
+    // 3. Count their past redemptions
+    const { count: redemptionCount } = await supabase
+      .from('redemptions')
+      .select('*', { count: 'exact', head: true })
+      .eq('customer_id', customerId);
+
+    // 4. Work out if they have an unredeemed reward
+    const rewardsEarned = Math.floor(stampCount / 10);
+    const hasUnredeemedReward = rewardsEarned > redemptionCount;
+
+    // 5. Render the action page
+    res.send(`
+      <html>
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+          body { font-family: sans-serif; text-align: center; padding: 40px; background: #f5f5f5; }
+          .card { background: white; border-radius: 16px; padding: 32px; max-width: 320px; margin: 0 auto; box-shadow: 0 2px 12px rgba(0,0,0,0.1); }
+          h2 { margin: 0 0 8px; }
+          .stamp-count { font-size: 32px; font-weight: bold; color: #2E75B6; margin: 16px 0; }
+          .btn { display: block; width: 100%; padding: 16px; border: none; border-radius: 12px; font-size: 18px; font-weight: bold; cursor: pointer; margin-top: 16px; text-decoration: none; }
+          .btn-stamp { background: #2E75B6; color: white; }
+          .btn-redeem { background: #22c55e; color: white; }
+          .btn-disabled { background: #e5e7eb; color: #9ca3af; cursor: not-allowed; }
+          .reward-badge { background: #fef9c3; border: 1px solid #fde047; border-radius: 8px; padding: 8px 16px; margin: 12px 0; font-size: 14px; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <div style="font-size:40px">👤</div>
+          <h2>${customer.phone_or_email}</h2>
+          <div class="stamp-count">${stampCount} / 10 stamps</div>
+          ${hasUnredeemedReward ? '<div class="reward-badge">🎁 Reward available to redeem</div>' : ''}
+          <a href="/stamps/issue-scan/${customerId}" class="btn btn-stamp">✅ Issue Stamp</a>
+          ${hasUnredeemedReward
+            ? `<a href="/stamps/redeem-scan/${customerId}" class="btn btn-redeem">🎁 Redeem Reward</a>`
+            : `<span class="btn btn-disabled">🎁 No reward yet</span>`
+          }
+        </div>
+      </body>
+      </html>
+    `);
+
+  } catch (err) {
+    console.error('Action page error:', err);
+    res.status(500).send('<h2>Something went wrong</h2>');
   }
 });
 module.exports = router;
